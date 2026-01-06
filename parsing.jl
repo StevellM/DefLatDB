@@ -48,7 +48,7 @@ function _gram_from_list(V::Vector{QQFieldElem}, n::Int)
       M[i, j] = M[j, i] = V[k]
     end
   end
-  return integer_lattice(; gram=M)
+  return integer_lattice(; gram=M, cached=false)
 end
 
 # Load the genus stored in the numbered dir f
