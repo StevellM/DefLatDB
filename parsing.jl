@@ -104,7 +104,7 @@ path(db::ZZLatDefDB) = db.path
 Return the object containing the keys of the entries in the `dataset` folder
 in the database reached by `db`.
 """
-index(db::ZZLatDefDB) = db.keys
+keys(db::ZZLatDefDB) = db.keys
 
 @doc raw"""
     index(ind::DBKeys{T}) -> Set{T}
