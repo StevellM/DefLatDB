@@ -335,7 +335,7 @@ function test_validity_database(
 )
   update_keys!(db)
   count_nonvalid_entries = Int(0)
-  for entry_label in keys(db)
+  for entry_label in index(db)
     flag = is_valid_entry(db, entry_label; quarantine)
     if !flag
       !test_all && error("Found a corrupted entry")
@@ -373,8 +373,10 @@ function move_to_quarantine!(
     trimmed_label = entry_label
   end
   _source = joinpath(path(db), folder_name, entry_label)
+  @assert isdir(_source)
   j = count(contains(trimmed_label), readdir(joinpath(path(db), "quarantine")))
   _dest = joinpath(path(db), "quarantine", trimmed_label)*"__qua.$(j)"
+  @assert !isdir(_dest)
   mv(_source, _dest)
   return _dest
 end
@@ -387,7 +389,7 @@ reached by `db` and put in quarantine any corrupted entry.
 """
 function cleanup_database!(db::ZZLatDefDB)
   update_keys!(db)
-  for label in keys(db)
+  for label in index(db)
     if is_corrupted_entry(db, label)
       move_to_quarantine!(db, "dataset", label)
     end
