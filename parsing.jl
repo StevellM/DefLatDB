@@ -762,7 +762,7 @@ function save_genus!(
   safe::Bool=true,
   replace_corrupted_data::Bool=true,
   save_duplicates::Bool=false,
-  verbose::Bool=true,
+  verbose::Bool=false,
 )
   label, s = get_label_and_scaling_factor(G)
   add_new_key = true
@@ -872,7 +872,7 @@ function move_to_new_database(db_path::String = @__DIR__)
         continue
       end
       db[G] = lats
-      @assert Set(gram_matrix.(lats)) = Set(gram_matrix.(db[G]))
+      @assert Set(gram_matrix.(lats)) == Set(gram_matrix.(db[G]))
     end
   end
   return nothing
