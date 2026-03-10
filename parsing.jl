@@ -32,10 +32,10 @@ end
 
 Object to store an index for the keys of each entry in a database.
 """
-struct DBIndex{T}
+mutable struct DBKeys{T}
   _index::Set{T}
 
-  function DBIndex{T}(_index::Set{T}) where T
+  function DBKeys{T}(_index::Set{T}) where T
     return new{T}(_index)
   end
 end
@@ -47,7 +47,7 @@ Object to work with the database of definite genera. It stores an absolute
 path where to reach the database and an index of keys for the corresponding
 dataset.
 """
-struct ZZLatDefDB
+mutable struct ZZLatDefDB
   path::String
   keys::DBKeys{String}
 
@@ -79,13 +79,13 @@ Generate the index of keys for the main `dataset` folder of the database of
 definite lattices reached by `db` and stores it.
 """
 function generate_keys!(db::ZZLatDefDB)
-  _path = joinpath(path, "dataset")
+  _path = joinpath(path(db), "dataset")
   _index = Set{String}()
   for label in readdir(_path)
     push!(_index, label)
   end
   ind = DBKeys{String}(_index)
-  z.keys = ind
+  db.keys = ind
   return nothing
 end
 
@@ -164,8 +164,10 @@ end
 # set of keys encoded in `ind`
 function Base.in(G::ZZGenus, ind::DBKeys{String})
   label, _ = get_label_and_scaling_factor(G)
-  return label in index(db)
+  return label in index(ind)
 end
+
+Base.in(G::ZZGenus, db::ZZLatDefDB) = G in keys(db)
 
 # Return whether the reduced genus of `G` is available in the
 # database `db`
@@ -217,7 +219,7 @@ struct LatticeFileError <: Exception
 end
 
 function Base.showerror(io::IO, e::LatticeFileError)
-  println(io, "!! Database corrupted !! $(e.msg): $(e.path_to_lattice) !! Run a cleanup of the main dataset")
+  println(io, "!! Database corrupted !! $(e.msg): $(e.path_to_file) !! Run a cleanup of the main dataset")
 end
 
 ### Genus exception
@@ -366,8 +368,12 @@ function move_to_quarantine!(
   folder_name::String,
   entry_label::String,
 )
-  k =  findfirst(k -> buffer_label[k:k+1] == "__", 1:length(entry_label))
-  if !isnothing(k)
+  if contains(entry_label, "__")
+    k =  findfirst(k -> entry_label[k:k+1] == "__", 1:length(entry_label))
+  else
+    k = 0
+  end
+  if !iszero(k)
     trimmed_label = entry_label[1:k-1]
   else
     trimmed_label = entry_label
@@ -490,9 +496,9 @@ function promote_entry_to_main_dataset!(
 
   _source = joinpath(path(db), folder_name, entry_label)
   @assert isdir(_source)
-  k = findfirst(k -> buffer_label[k:k+1] == "__", 1:length(entry_label))
+  k = findfirst(k -> entry_label[k:k+1] == "__", 1:length(entry_label))
   @assert !isnothing(k)
-  trimmed_label = buffer_label[1:k-1]
+  trimmed_label = entry_label[1:k-1]
   _dest = joinpath(path(db), "dataset", trimmed_label)
 
   if isdir(_dest)
@@ -507,8 +513,8 @@ function promote_entry_to_main_dataset!(
     end
   end
 
-  mv(old_genus, new_genus)
-  add_key!(db, label)
+  mv(_source, _dest)
+  add_key!(db, entry_label)
   return nothing
 end
 
@@ -526,10 +532,9 @@ definite lattices reached by `db` to the main folder `dataset`.
 
 See `promote_entry_to_main_dataset!` for further documentation.
 """
-function promote_entry_to_main_dataset!(
+function promote_folder_to_main_dataset!(
   db::ZZLatDefDB,
-  folder_name::String,
-  entry_label::String;
+  folder_name::String;
   replace_old::Bool=false,
   ignore_conflict::Bool=true,
   quarantine::Bool=true,
@@ -563,7 +568,7 @@ function lattice_from_data(
   n::Int,
   s::QQFieldElem = QQ(1),
 )
-  length(V) == binomial(n+1, 2) || throw(LatticeFileError(lat, "Incompatible rank and half gram")
+  length(V) == binomial(n+1, 2) || throw(LatticeFileError(lat, "Incompatible rank and half gram"))
   if !isone(s)
     map!(Base.Fix2(mul!, s), V)
   end
@@ -631,7 +636,7 @@ function load_genus(
   rd = readdir(_path; join=true)
   isempty(rd) && throw(GenusDirError(_path, "Empty genus entry"))
   for lat in rd
-    startswith(lat, "lat_") && endswith(lat, ".txt") || throw(GenusDirError(_path, "Wrong lattice file format"))
+    contains(lat, "lat_") && endswith(lat, ".txt") || throw(GenusDirError(_path, "Wrong lattice file format"))
     push!(lats, load_lattice(lat, s))
   end
 
@@ -652,25 +657,26 @@ function load_lattice(
   lat::String,
   s::QQFieldElem = QQ(1),
 )
-  data = realines(lat)
-  length(data) < 3 && throw(LatticeFileError(lat, "Missing entries in lattice file")
-  rk = try Base.parse(Int, first(data))
-       catch e
-       rk = try Base.parse(Int, first(data))
-       catch e
-       throw(LatticeFileError(lat, "Cannot parse first line")
+  data = readlines(lat)
+  length(data) < 3 && throw(LatticeFileError(lat, "Missing entries in lattice file"))
+  rk = try
+         Base.parse(Int, first(data))
+       catch
+         throw(LatticeFileError(lat, "Cannot parse first line"))
        end
 
-  _, V = try Hecke._parse(Vector{QQFieldElem}, IOBuffer(data[2]))
-         catch e
-         throw(LatticeFileError(lat, "Cannot parse second line")
+  _, V = try
+           Hecke._parse(Vector{QQFieldElem}, IOBuffer(data[2]))
+         catch
+           throw(LatticeFileError(lat, "Cannot parse second line"))
          end
 
   L = lattice_from_data(V, rk, s)
 
-  L.automorphism_group_order = try last(Hecke._parse(ZZRingElem, IOBuffer(data[3])))
-                               catch e
-                               throw(LatticeFileError(lat, "Cannot parse third line")
+  L.automorphism_group_order = try
+                                 last(Hecke._parse(ZZRingElem, IOBuffer(data[3])))
+                               catch
+                                 throw(LatticeFileError(lat, "Cannot parse third line"))
                                end
   return L
 end
@@ -767,6 +773,7 @@ function save_genus!(
       j = count(contains(label), readdir(joinpath(path(db), "quarantine")))
       _path = joinpath(path(db), "quarantine", label)*"__qua.$(j)"
       verbose && println(">>>> New data stored in quarantine folder: "*_path)
+      @goto saving
     end
   end
 
@@ -784,6 +791,7 @@ function save_genus!(
         verbose && println(">>>> New data stored in buffer folder: "*_path)
       else
         verbose && println(">>>> New data stored in dataset folder: "*_path)
+      end
     else
       verbose && println(">> Current version of genus is not corrupted...")
       if save_duplicates
@@ -798,6 +806,8 @@ function save_genus!(
   else
     verbose && println(">>>> New data stored in dataset folder: "*_path)
   end
+
+  @label saving
   mkdir(_path)
 
   for i in 1:length(lats)
@@ -862,7 +872,7 @@ function move_to_new_database(db_path::String = @__DIR__)
         continue
       end
       db[G] = lats
-      @assert Set(gram_matrix.(lats)) == Set(gram_matrix.(db[G]))
+      @assert Set(gram_matrix.(lats)) = Set(gram_matrix.(db[G]))
     end
   end
   return nothing
