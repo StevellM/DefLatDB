@@ -69,6 +69,22 @@ default the absolute path of the directory in which the file containing this
 function is stored.
 """
 function definite_lattice_database(path::String = joinpath(@__DIR__, "definite_genera"))
+  # Initiate all the necessary folders if not yet existing
+  if !isdir(joinpath(path, "dataset"))
+    mkdir(joinpath(path, "dataset"))
+  end
+  if !isdir(joinpath(path, "buffer"))
+    mkdir(joinpath(path, "buffer"))
+  end
+  if !isdir(joinpath(path, "quarantine"))
+    mkdir(joinpath(path, "quarantine"))
+  end
+  if !isdir(joinpath(path, "duplicate"))
+    mkdir(joinpath(path, "duplicate"))
+  end
+  if !isdir(joinpath(path, "temporary"))
+    mkdir(joinpath(path, "temporary"))
+  end
   return ZZLatDefDB(path)
 end
 
@@ -136,7 +152,10 @@ Base.getindex(db::ZZLatDefDB, label::String) = load_genus(db, label)
 # Add a new entry to the main dataset, whose key is the label of the
 # reduced genus associated to G and the values are the corresponding
 # rescaling of the lattices in lats.
-Base.setindex!(db::ZZLatDefDB, lats::Vector{ZZLat}, G::ZZGenus) = save_genus!(db, lats, G)
+function Base.setindex!(db::ZZLatDefDB, lats::Vector{ZZLat}, G::ZZGenus)
+  save_genus!(db, lats, G)
+  return nothing
+end
 
 ### Key handling
 
@@ -381,10 +400,11 @@ function move_to_quarantine!(
   _source = joinpath(path(db), folder_name, entry_label)
   @assert isdir(_source)
   j = count(contains(trimmed_label), readdir(joinpath(path(db), "quarantine")))
-  _dest = joinpath(path(db), "quarantine", trimmed_label)*"__qua.$(j)"
+  quarantine_label = trimmed_label*"__qua.$(j)"
+  _dest = joinpath(path(db), "quarantine", quarantine_label)
   @assert !isdir(_dest)
   mv(_source, _dest)
-  return _dest
+  return quarantine_label
 end
 
 @doc raw"""
@@ -630,7 +650,6 @@ function load_genus(
   folder_name::String="dataset",
 )
   lats = ZZLat[]
-  @assert folder_name != "quarantine"
   _path = joinpath(path(db), folder_name, entry_label)
   @req isdir(_path) "Entry does not exist in the given folder"
   rd = readdir(_path; join=true)
@@ -727,7 +746,7 @@ end
       safe::Bool=true,
       replace_corrupted_data::Bool=true,
       save_duplicate::Bool=false,
-      verbose::Bool=true,
+      verbose::Bool=false,
     ) -> Nothing
 
 Update the main `dataset` folder of the database of definite lattice reached by
@@ -765,60 +784,80 @@ function save_genus!(
   verbose::Bool=false,
 )
   label, s = get_label_and_scaling_factor(G)
+  verbose && println("Store new genus: ", label)
   add_new_key = true
+
   if safe
     if !all(isequal(G)∘genus, lats) || !check_mass_formula(lats)
       add_new_key = false
       verbose && println("!! Data corrupted !! The lattices are not all in the same genus or do not satisfy the mass formula...")
       j = count(contains(label), readdir(joinpath(path(db), "quarantine")))
-      _path = joinpath(path(db), "quarantine", label)*"__qua.$(j)"
-      verbose && println(">>>> New data stored in quarantine folder: "*_path)
-      @goto saving
+      quarantine_label = label*"__qua.$(j)"
+      _path = joinpath(path(db), "quarantine", quarantine_label)
+      verbose && println(">>>> New data stored in quarantine folder: ", quarantine_label)
     end
   end
 
-  _path = joinpath(path(db), "dataset", label)
-  if isdir(_path)
-    add_new_key = false
-    verbose && println("!! Duplicate warning !! The genus seems to be already in the database...")
-    if is_corrupted_entry(db, label)
-      verbose && println(">> Current version of genus is corrupted...")
-      _info = move_to_quarantine!(db, "dataset", label)
-      verbose && println(">>>> Old data moved to quarantine folder: "*_info)
-      if !replace_corrupted_data
-        j = count(contains(label), readdir(joinpath(path(db), "buffer")))
-        _path = joinpath(path(db), "buffer", label)*"__buf.$(j)"
-        verbose && println(">>>> New data stored in buffer folder: "*_path)
-      else
-        verbose && println(">>>> New data stored in dataset folder: "*_path)
-      end
-    else
-      verbose && println(">> Current version of genus is not corrupted...")
-      if save_duplicates
-        j = count(contains(label), readdir(joinpath(path(db), "duplicate")))
-        _path = joinpath(path(db), "duplicate", label)*"__dup.$(j)"
-        verbose && println(">>>> New data stored in duplicate folder: "*_path)
-      else
-         verbose && println(">>>> New data is ignored")
-         return nothing
-      end
+  if add_new_key
+    _path = joinpath(path(db), "dataset", label)
+    if isdir(_path) && !save_duplicates && !is_corrupted_entry(db, label)
+      verbose && println(">>>> New data is ignored")
+      return true
     end
-  else
-    verbose && println(">>>> New data stored in dataset folder: "*_path)
   end
 
-  @label saving
-  mkdir(_path)
-
+  tmp_path = mktempdir(joinpath(path(db), "temporary"); prefix=label)
   for i in 1:length(lats)
-    lat = joinpath(_path, "lat_$(i).txt")
+    lat = joinpath(tmp_path, "lat_$(i).txt")
     touch(lat)
     _f = open(lat, "w")
     Base.write(_f, data_from_lattice(lats[i], s))
     close(_f)
   end
+
+  if is_corrupted_entry(db, tmp_path; folder_name="temporary")
+    add_new_key = false
+    verbose && println("!! Data corrupted !! Something went wrong during saving...")
+    j = count(contains(label), readdir(joinpath(path(db), "quarantine")))
+    quarantine_label = label*"__qua.$(j)"
+    _path = joinpath(path(db), "quarantine", quarantine_label)
+    verbose && println(">>>> New data stored in quarantine folder: ", quarantine_label)
+  end
+
+  if isdir(_path)
+    verbose && println("!! Duplicate warning !! The genus seems to be already in the database...")
+    if is_corrupted_entry(db, label)
+      verbose && println(">> Current version of genus is corrupted...")
+      quarantine_label = move_to_quarantine!(db, "dataset", label)
+      verbose && println(">>>> Old data moved to quarantine folder: ", quarantine_label)
+      if !replace_corrupted_data
+        add_new_key = false
+        j = count(contains(label), readdir(joinpath(path(db), "buffer")))
+        buffer_label = label*"__buf.$(j)"
+        _path = joinpath(path(db), "buffer", buffer_label)
+        verbose && println(">>>> New data stored in buffer folder: ", buffer_label)
+      else
+        verbose && println(">>>> New data stored in dataset folder: ", label)
+      end
+    else
+      verbose && println(">> Current version of genus is not corrupted...")
+      if save_duplicates
+        j = count(contains(label), readdir(joinpath(path(db), "duplicate")))
+        duplicate_label = label*"__dup.$(j)"
+        _path = joinpath(path(db), "duplicate", duplicate_label)
+        verbose && println(">>>> New data stored in duplicate folder: ", duplicate_label)
+      else
+         verbose && println(">>>> New data is ignored")
+         return true
+      end
+    end
+  elseif add_new_key
+    verbose && println(">>>> New data stored in dataset folder: ", label)
+  end
+
+  mv(tmp_path, _path)
   add_new_key && add_key!(db, label)
-  return nothing
+  return add_new_key
 end
 
 ###############################################################################
@@ -860,7 +899,10 @@ function load_genus(f::String)
   return gg
 end
 
-function move_to_new_database(db_path::String = @__DIR__)
+function move_to_new_database(
+  db_path::String = @__DIR__;
+  verbose::Bool=false,
+)
   db = definite_lattice_database(joinpath(db_path, "definite_genera"))
   rd = readdir(joinpath(db_path, "defgen_db"); join=true)
   for rank_folder in rd
@@ -868,11 +910,10 @@ function move_to_new_database(db_path::String = @__DIR__)
       lats = load_genus(genus_entry)
       G = genus(first(lats))
       if haskey(db, G)
-        @assert length(db[G]) == length(lats)
         continue
       end
-      db[G] = lats
-      @assert Set(gram_matrix.(lats)) == Set(gram_matrix.(db[G]))
+      flag = save_genus!(db, lats, G; verbose)
+      @assert !flag || Set(gram_matrix.(lats)) == Set(gram_matrix.(db[G]))
     end
   end
   return nothing
