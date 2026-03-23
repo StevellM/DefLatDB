@@ -115,12 +115,12 @@ Return the absolute path at which the database is stored.
 path(db::ZZLatDefDB) = db.path
 
 @doc raw"""
-    keys(db::ZZLatDefDB) -> DBKeys
+    Base.keys(db::ZZLatDefDB) -> DBKeys
 
 Return the object containing the keys of the entries in the `dataset` folder
 in the database reached by `db`.
 """
-keys(db::ZZLatDefDB) = db.keys
+Base.keys(db::ZZLatDefDB) = db.keys
 
 @doc raw"""
     index(ind::DBKeys{T}) -> Set{T}
