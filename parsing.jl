@@ -866,11 +866,22 @@ end
 #
 ###############################################################################
 
+function Base.show(io::IO, ::MIME"text/plain", s::DBKeys{T}) where T
+  io = Oscar.pretty(io)
+  println(io, "DBKeys{$T}")
+  print(io, Oscar.Indent(), "indexing a collection with ", Oscar.ItemQuantity(length(index(s)), "entry"))
+  print(io, Oscar.Dedent())
+end
+
+function Base.show(io::IO, s::DBKeys{T}) where T
+  print(io, "DBKeys{$T}")
+end
+
 function Base.show(io::IO, ::MIME"text/plain", db::ZZLatDefDB)
   io = Oscar.pretty(io)
   println(io, "Database of definite lattices")
   print(io, Oscar.Indent())
-  print(io, "with ", Oscar.ItemQuantity(length(index(db)), "unique entry", "unique entries"))
+  print(io, "with ", Oscar.ItemQuantity(length(index(db)), "(reduced) genus", "(reduced) genera"))
   print(io, Oscar.Dedent())
 end
 
