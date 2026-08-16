@@ -862,59 +862,88 @@ end
 
 ###############################################################################
 #
-#  Temporary script: move old database to new infrastructure
-#
-#  To be removed once the old data has been transfered in
-#  `definite_genera/dataset`
+#  Printing
 #
 ###############################################################################
 
-# n is the rank of the matrix to be constructed
-function _gram_from_list(V::Vector{QQFieldElem}, n::Int)
-  M = zero_matrix(QQ, n, n)
-  k = 0
-  for i in 1:n
-    for j in i:n
-      k += 1
-      M[i, j] = M[j, i] = V[k]
-    end
-  end
-  return integer_lattice(; gram=M, cached=false)
+function Base.show(io::IO, ::MIME"text/plain", s::DBKeys{T}) where T
+  io = Oscar.pretty(io)
+  println(io, "DBKeys{$T}")
+  print(io, Oscar.Indent(), "indexing a collection with ", Oscar.ItemQuantity(length(index(s)), "entry"))
+  print(io, Oscar.Dedent())
 end
 
-# Load the genus stored in the numbered dir f
-function load_genus(f::String)
-  gg = ZZLat[]
-  files = readdir(f; join=true)
-  for file in files
-    rl = readlines(file)
-    n = Base.parse(Int, rl[1])
-    _, V = Hecke._parse(Vector{QQFieldElem}, IOBuffer(rl[2]))
-    L = _gram_from_list(V, n)
-    if length(rl) == 3
-      L.automorphism_group_order = Hecke._parse(ZZRingElem, IOBuffer(rl[3]))[2]
-    end
-    push!(gg, L)
-  end
-  return gg
+function Base.show(io::IO, s::DBKeys{T}) where T
+  print(io, "DBKeys{$T}")
 end
 
-function move_to_new_database(
-  db_path::String = @__DIR__;
-  verbose::Bool=false,
-)
-  db = definite_lattice_database(joinpath(db_path, "definite_genera"))
-  rd = readdir(joinpath(db_path, "defgen_db"); join=true)
-  for rank_folder in rd
-    for genus_entry in readdir(rank_folder; join=true)
-      lats = load_genus(genus_entry)
-      G = genus(first(lats))
-      if haskey(db, G)
-        continue
-      end
-      flag = save_genus!(db, lats, G; verbose)
-      @assert !flag || Set(gram_matrix.(lats)) == Set(gram_matrix.(db[G]))
-    end
-  end
-  return nothing
+function Base.show(io::IO, ::MIME"text/plain", db::ZZLatDefDB)
+  io = Oscar.pretty(io)
+  println(io, "Database of definite lattices")
+  print(io, Oscar.Indent())
+  print(io, "with ", Oscar.ItemQuantity(length(index(db)), "(reduced) genus", "(reduced) genera"))
+  print(io, Oscar.Dedent())
 end
+
+function Base.show(io::IO, db::ZZLatDefDB)
+  print(io, "Database of definite lattices")
+end
+
+################################################################################
+##
+##  Temporary script: move old database to new infrastructure
+##
+##  To be removed once the old data has been transfered in
+##  `definite_genera/dataset`
+##
+################################################################################
+#
+## n is the rank of the matrix to be constructed
+#function _gram_from_list(V::Vector{QQFieldElem}, n::Int)
+#  M = zero_matrix(QQ, n, n)
+#  k = 0
+#  for i in 1:n
+#    for j in i:n
+#      k += 1
+#      M[i, j] = M[j, i] = V[k]
+#    end
+#  end
+#  return integer_lattice(; gram=M, cached=false)
+#end
+#
+## Load the genus stored in the numbered dir f
+#function load_genus(f::String)
+#  gg = ZZLat[]
+#  files = readdir(f; join=true)
+#  for file in files
+#    rl = readlines(file)
+#    n = Base.parse(Int, rl[1])
+#    _, V = Hecke._parse(Vector{QQFieldElem}, IOBuffer(rl[2]))
+#    L = _gram_from_list(V, n)
+#    if length(rl) == 3
+#      L.automorphism_group_order = Hecke._parse(ZZRingElem, IOBuffer(rl[3]))[2]
+#    end
+#    push!(gg, L)
+#  end
+#  return gg
+#end
+#
+#function move_to_new_database(
+#  db_path::String = @__DIR__;
+#  verbose::Bool=false,
+#)
+#  db = definite_lattice_database(joinpath(db_path, "definite_genera"))
+#  rd = readdir(joinpath(db_path, "defgen_db"); join=true)
+#  for rank_folder in rd
+#    for genus_entry in readdir(rank_folder; join=true)
+#      lats = load_genus(genus_entry)
+#      G = genus(first(lats))
+#      if haskey(db, G)
+#        continue
+#      end
+#      flag = save_genus!(db, lats, G; verbose)
+#      @assert !flag || Set(gram_matrix.(lats)) == Set(gram_matrix.(db[G]))
+#    end
+#  end
+#  return nothing
+#end
