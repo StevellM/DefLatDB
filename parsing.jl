@@ -68,10 +68,10 @@ the absolute path `path`. If `path` is not set in output, then it chooses by
 default the absolute path of the directory in which the file containing this
 function is stored.
 """
-function definite_lattice_database(path::String = joinpath(@__DIR__, "definite_genera"))
+function definite_lattice_database(path::String = joinpath(@__DIR__, "data"))
   # Initiate all the necessary folders if not yet existing
-  if !isdir(joinpath(path, "dataset"))
-    mkdir(joinpath(path, "dataset"))
+  if !isdir(joinpath(path, "main"))
+    mkdir(joinpath(path, "main"))
   end
   if !isdir(joinpath(path, "buffer"))
     mkdir(joinpath(path, "buffer"))
@@ -91,11 +91,11 @@ end
 @doc raw"""
     generate_keys!(db::ZZLatDefDB) -> Nothing
 
-Generate the index of keys for the main `dataset` folder of the database of
+Generate the index of keys for the `main` folder of the database of
 definite lattices reached by `db` and stores it.
 """
 function generate_keys!(db::ZZLatDefDB)
-  _path = joinpath(path(db), "dataset")
+  _path = joinpath(path(db), "main")
   _index = Set{String}()
   for label in readdir(_path)
     push!(_index, label)
@@ -117,7 +117,7 @@ path(db::ZZLatDefDB) = db.path
 @doc raw"""
     Base.keys(db::ZZLatDefDB) -> DBKeys
 
-Return the object containing the keys of the entries in the `dataset` folder
+Return the object containing the keys of the entries in the `main` folder
 in the database reached by `db`.
 """
 Base.keys(db::ZZLatDefDB) = db.keys
@@ -132,7 +132,7 @@ index(ind::DBKeys) = ind._index
 @doc raw"""
     index(db::ZZLatDefDB) -> Set{String}
 
-Return the index for the entries in the `dataset` folder in the database
+Return the index for the entries in the `main` folder in the database
 of definite lattices reached by `db`.
 """
 index(db::ZZLatDefDB) = index(keys(db))
@@ -140,16 +140,16 @@ index(db::ZZLatDefDB) = index(keys(db))
 ### Get and set index
 
 # Load the representatives for the genus with symbol G
-# Return an error if the genus is not available in the main dataset,
+# Return an error if the genus is not available in the `main` folder,
 # or if the corresponding entry is corrupted
 Base.getindex(db::ZZLatDefDB, G::ZZGenus) = load_genus(db, G)
 
 # Load the entry with key label
-# Return an error if the main dataset does not contain such entry,
+# Return an error if the `main` folder does not contain such entry,
 # or if the entry is corrupted
 Base.getindex(db::ZZLatDefDB, label::String) = load_genus(db, label)
 
-# Add a new entry to the main dataset, whose key is the label of the
+# Add a new entry to the `main` folder, whose key is the label of the
 # reduced genus associated to G and the values are the corresponding
 # rescaling of the lattices in lats.
 function Base.setindex!(db::ZZLatDefDB, lats::Vector{ZZLat}, G::ZZGenus)
@@ -222,39 +222,24 @@ struct MassFormulaError <: Exception
 end
 
 function Base.showerror(io::IO, e::MassFormulaError)
-  println(io, "!! Database corrupted !! Mass formula is wrong: $(e.path_to_genus) !! Run a cleanup of the main dataset")
-end
-
-### Lattice exception
-# Error if a lattice file is corrupted
-
-struct LatticeFileError <: Exception
-  path_to_file::String
-  msg::String
-
-  function LatticeFileError(path_to_file::String, msg::String)
-    return new(path_to_file, msg)
-  end
-end
-
-function Base.showerror(io::IO, e::LatticeFileError)
-  println(io, "!! Database corrupted !! $(e.msg): $(e.path_to_file) !! Run a cleanup of the main dataset")
+  println(io, "!! Database corrupted !! Mass formula is wrong: $(e.path_to_genus) !! Run a cleanup of the main folder")
 end
 
 ### Genus exception
-# Error if a genus entry is corrupted
+# Error if a genus file is corrupted
 
-struct GenusDirError <: Exception
+struct GenusError <: Exception
   path_to_genus::String
+  pos::Int
   msg::String
 
-  function GenusDirError(path_to_genus::String, msg::String)
-    return new(path_to_genus, msg)
+  function GenusError(path_to_genus::String, pos::Int, msg::String)
+    return new(path_to_genus, pos, msg)
   end
 end
 
-function Base.showerror(io::IO, e::GenusDirError)
-  println(io, "!! Database corrupted !! $(e.msg): $(e.path_to_genus) !! Run a cleanup of the main dataset")
+function Base.showerror(io::IO, e::GenusError)
+  println(io, "!! Database corrupted !! $(e.msg): line $(e.pos) of $(e.path_to_genus) !! Run a cleanup of the main folder")
 end
 
 ### Checks for corrupted data
@@ -268,7 +253,7 @@ end
 function is_corrupted_entry(
   db::ZZLatDefDB,
   entry_label::String;
-  folder_name::String="dataset",
+  folder_name::String="main",
 )
   lats = try
            load_genus(db, entry_label; folder_name)
@@ -293,7 +278,7 @@ end
     is_valid_entry(
       db::ZZLatDefDB,
       entry_label::String;
-      folder_name::String="dataset",
+      folder_name::String="main",
       quarantine::Bool=false,
     )
 
@@ -310,7 +295,7 @@ moved to the `quarantine` folder.
 function is_valid_entry(
   db::ZZLatDefDB,
   entry_label::String;
-  folder_name::String="dataset",
+  folder_name::String="main",
   quarantine::Bool=false,
 )
   lats = try
@@ -339,7 +324,7 @@ end
       quarantine::Bool=true,
     ) -> Int
 
-Test whether all the entries from the main `dataset` folder of the database
+Test whether all the entries from the `main` folder of the database
 of definite lattices reached by `db` are valid. See also `is_valid_entry`.
 
 If an entry is not valid and `quarantine` is set to `true`, then the entry is
@@ -398,11 +383,11 @@ function move_to_quarantine!(
     trimmed_label = entry_label
   end
   _source = joinpath(path(db), folder_name, entry_label)
-  @assert isdir(_source)
+  @assert isfile(_source)
   j = count(contains(trimmed_label), readdir(joinpath(path(db), "quarantine")))
   quarantine_label = trimmed_label*"__qua.$(j)"
   _dest = joinpath(path(db), "quarantine", quarantine_label)
-  @assert !isdir(_dest)
+  @assert !isfile(_dest)
   mv(_source, _dest)
   return quarantine_label
 end
@@ -410,14 +395,14 @@ end
 @doc raw"""
     cleanup_database!(db::ZZLatDefDB) -> Nothing
 
-Go through the main folder `dataset` of the database of definite lattices
+Go through the `main` folder of the database of definite lattices
 reached by `db` and put in quarantine any corrupted entry.
 """
 function cleanup_database!(db::ZZLatDefDB)
   update_keys!(db)
   for label in index(db)
     if is_corrupted_entry(db, label)
-      move_to_quarantine!(db, "dataset", label)
+      move_to_quarantine!(db, "main", label)
     end
   end
   return nothing
@@ -429,11 +414,10 @@ end
 Remove all entries the folder `folder_name` in the database of definite
 lattices reached by `db`.
 
-For data safety, this is only available for all folders except the main folder
-`dataset`.
+For data safety, this is only available for all folders except the `main` folder.
 """
 function empty_folder!(db::ZZLatDefDB, folder_name::String)
-  @assert folder_name != "dataset"
+  @assert folder_name != "main"
   _path = joinpath(path(db), folder_name)
   !isdir(_path) && return nothing
   for entry_label in readdir(_path)
@@ -452,26 +436,22 @@ end
 Delete the entry `entry_label` in the folder `folder_name` in the database
 of definite lattices reached by `db`.
 
-For data safety, this is only available for all folders except the main folder
-`dataset`.
+For data safety, this is only available for all folders except the `main` folder.
 """
 function delete_from_folder!(
   db::ZZLatDefDB,
   folder_name::String,
   entry_label::String,
 )
-  @assert folder_name != "dataset"
+  @assert folder_name != "main"
   _path = joinpath(path(db), folder_name)
-  !isdir(_path) && return nothing
   _genus = joinpath(_path, entry_label)
-  if isdir(_genus)
-    rm(_genus; recursive=true)
-  end
+  isfile(_genus) && rm(_genus)
   return nothing
 end
 
 @doc raw"""
-    promote_entry_to_main_dataset!(
+    promote_entry_to_main_folder!(
       db::ZZLatDefDB,
       folder_name::String,
       entry_label::String;
@@ -481,22 +461,22 @@ end
     ) -> Nothing
 
 Move the entry `entry_label` from the folder `folder_name` in the database of
-definite lattices reached by `db` to the main folder `dataset`.
+definite lattices reached by `db` to the `main` folder.
 
-If the entry is already available in `dataset`, then
+If the entry is already available in `main`, then
   - either `replace_old` is set to true and the content is replaced by the one
     of `entry_label` from `folder_name`;
   - or `ignore_conflict` is set to `true` and the content of `entry_label` from
     `folder_name` is deleted;
   - or an error is thrown.
 
-This function cannot be called for context in quarantine. If the content of
+This function cannot be called for content in quarantine. If the content of
 `entry_label` from `folder_name` is corrupted, then:
   - either `quarantine` is set to true and the data is moved in the
     `quarantine` folder,
   - or an error is thrown.
 """
-function promote_entry_to_main_dataset!(
+function promote_entry_to_main_folder!(
   db::ZZLatDefDB,
   folder_name::String,
   entry_label::String;
@@ -515,21 +495,20 @@ function promote_entry_to_main_dataset!(
   end
 
   _source = joinpath(path(db), folder_name, entry_label)
-  @assert isdir(_source)
   k = findfirst(k -> entry_label[k:k+1] == "__", 1:length(entry_label))
   @assert !isnothing(k)
   trimmed_label = entry_label[1:k-1]
-  _dest = joinpath(path(db), "dataset", trimmed_label)
+  _dest = joinpath(path(db), "main", trimmed_label)
 
-  if isdir(_dest)
+  if isfile(_dest)
     if replace_old
       mv(_source, _dest; force=true)
       return nothing
     elseif ignore_conflict
-      rm(_source; recursive=true)
+      rm(_source)
       return nothing
     else
-      error("Data already available in the main dataset")
+      error("Data already available in the main folder")
     end
   end
 
@@ -539,7 +518,7 @@ function promote_entry_to_main_dataset!(
 end
 
 @doc raw"""
-    promote_folder_to_main_dataset!(
+    promote_folder_to_main_folder!(
       db::ZZLatDefDB,
       folder_name::String,
       replace_old::Bool=false,
@@ -548,11 +527,11 @@ end
     ) -> Nothing
 
 Move all the entries from the folder `folder_name` in the database of
-definite lattices reached by `db` to the main folder `dataset`.
+definite lattices reached by `db` to the `main` folder.
 
-See `promote_entry_to_main_dataset!` for further documentation.
+See `promote_entry_to_main_folder!` for further documentation.
 """
-function promote_folder_to_main_dataset!(
+function promote_folder_to_main_folder!(
   db::ZZLatDefDB,
   folder_name::String;
   replace_old::Bool=false,
@@ -562,7 +541,7 @@ function promote_folder_to_main_dataset!(
   _path = joinpath(path(db), folder_name)
   !isdir(_path) && return nothing
   for entry_label in readdir(_path)
-    promote_entry_to_main_dataset!(db, folder_name, entry_label; replace_old, ignore_conflict, quarantine)
+    promote_entry_to_main_folder!(db, folder_name, entry_label; replace_old, ignore_conflict, quarantine)
   end
   return nothing
 end
@@ -586,9 +565,9 @@ triangular part of the Gram matrix of ``L`` is given by the entries in `V`.
 function lattice_from_data(
   V::Vector{QQFieldElem},
   n::Int,
-  s::QQFieldElem = QQ(1),
+  s::QQFieldElem=QQ(1),
 )
-  length(V) == binomial(n+1, 2) || throw(LatticeFileError(lat, "Incompatible rank and half gram"))
+  @assert length(V) == binomial(n+1, 2)
   if !isone(s)
     map!(Base.Fix2(mul!, s), V)
   end
@@ -609,7 +588,7 @@ end
       G::ZZGenus,
     ) -> Vector{ZZLat}
 
-If ``G`` can be loaded from the main `dataset` folder of the database of
+If ``G`` can be loaded from the `main` folder of the database of
 definite lattices reached by `db`, return the corresponding representatives for
 the isometry classes in ``G``.
 
@@ -630,14 +609,14 @@ end
       db::ZZLatDefDB,
       entry_label::String,
       s::QQFieldElem = QQ(1);
-      folder_name::String="dataset",
+      folder_name::String="main",
     ) -> Vector{ZZLat}
 
 Return the list of lattices ``L(s)`` where ``L`` ranges over all the lattices
 stored at the entry `entry_name` from the folder `folder_name` in the database
 of definite lattices reached by `db`.
 
-The keyword argument `folder_name` refers to the main `dataset` folder by
+The keyword argument `folder_name` refers to the `main` folder by
 default, but one can also input any other folder which is not `quarantine`.
 
 If the entry `entry_label` from the folder `folder_name` does not exist, is
@@ -647,58 +626,59 @@ function load_genus(
   db::ZZLatDefDB,
   entry_label::String,
   s::QQFieldElem = QQ(1);
-  folder_name::String="dataset",
+  folder_name::String="main",
 )
   lats = ZZLat[]
+  j = findfirst(isequal('.'), entry_label)
+  @assert !isnothing(j)
+  n = parse(Int, entry_label[1:j-1])
   _path = joinpath(path(db), folder_name, entry_label)
-  @req isdir(_path) "Entry does not exist in the given folder"
-  rd = readdir(_path; join=true)
-  isempty(rd) && throw(GenusDirError(_path, "Empty genus entry"))
-  for lat in rd
-    contains(lat, "lat_") && endswith(lat, ".txt") || throw(GenusDirError(_path, "Wrong lattice file format"))
-    push!(lats, load_lattice(lat, s))
+  @req isfile(_path) "Entry does not exist in the dataset"
+  io = open(_path, "r")
+  while !eof(io)
+    L = load_lattice(io, _path, n, s)
+    push!(lats, L)
   end
-
   !check_mass_formula(lats) && throw(MassFormulaError(_path))
   return lats
 end
 
-@doc raw"""
-    load_lattice(
-      lat::String,
-      s::QQFieldElem = QQ(1),
-    ) -> ZZLat
+function current_line(io::IOStream)
+  pos=position(io)
+  seekstart(io)
+  data = read(io, pos)
+  return count(isequal(UInt('\n')), data)
+end
 
-Return the lattice ``L(s)`` where ``L`` is the lattice stored in the file
-with absolute path `lat`.
-"""
 function load_lattice(
-  lat::String,
+  io::IOStream,
+  _path::String,
+  n::Int,
   s::QQFieldElem = QQ(1),
 )
-  data = readlines(lat)
-  length(data) < 3 && throw(LatticeFileError(lat, "Missing entries in lattice file"))
-  rk = try
-         Base.parse(Int, first(data))
-       catch
-         throw(LatticeFileError(lat, "Cannot parse first line"))
-       end
-
+  l = readline(io)
+  k = current_line(io)
+  if !isone(count(isequal('|'), l))
+    throw(GenusError(_path, k, "Wrong line format"))
+  end
+  lat, ord = split(l, "|")
   _, V = try
-           Hecke._parse(Vector{QQFieldElem}, IOBuffer(data[2]))
+           Hecke._parse(Vector{QQFieldElem}, IOBuffer(lat))
          catch
-           throw(LatticeFileError(lat, "Cannot parse second line"))
+           throw(GenusError(_path, k, "Cannot parse half gram"))
          end
 
-  L = lattice_from_data(V, rk, s)
+  L = lattice_from_data(V, n, s)
 
   L.automorphism_group_order = try
-                                 last(Hecke._parse(ZZRingElem, IOBuffer(data[3])))
+                                 last(Hecke._parse(ZZRingElem, IOBuffer(ord)))
                                catch
-                                 throw(LatticeFileError(lat, "Cannot parse third line"))
+                                 throw(GenusError(_path, k, "Cannot parse automorphism group order"))
                                end
+
   return L
 end
+
 
 ###############################################################################
 #
@@ -713,28 +693,30 @@ end
     ) -> String
 
 Given an integer lattice ``L = M(s)`` where ``M`` is indivisible integral of
-nonnegative signature, return a string to be written in a ".txt" file to
-store the lattice ``M``. The string describes 3 lines:
-- the first line encodes the rank of ``M``,
-- the second line encodes the entries of the upper triangular part of the
+nonnegative signature, return a string to be written as a line in a file in
+which the genus of ``M`` is stored. The string describes 2 pieces of
+information separated by a `|`:
+- the first piece encodes the entries of the upper triangular part of the
   Gram matrix of ``M``,
-- the third line encodes the order of the automorphism group of ``L``
+- the second piece encodes the order of the automorphism group of ``L``
   (which is the same as for ``M``).
 """
 function data_from_lattice(L::ZZLat, s::QQFieldElem = QQ(1))
   M = gram_matrix(L)
-  str = "$(nrows(M))\n["
+  str = "["
   z = QQ(0)
   for i in 1:nrows(M), j in i:ncols(M)
     k = M[i,j]
     if !isone(s)
       mul!(z, k, 1//s)
+    else
+      z = k
     end
     str *= "$z,"
   end
   str = str[1:end-1]*"]"
-  s = automorphism_group_order(L)
-  str *= "\n$(s)"
+  o = automorphism_group_order(L)
+  str *= "|$(o)"
   return str
 end
 
@@ -749,26 +731,26 @@ end
       verbose::Bool=false,
     ) -> Nothing
 
-Update the main `dataset` folder of the database of definite lattice reached by
+Update the `main` folder of the database of definite lattice reached by
 `db` by storing the (rescaled) content of `lats` in a new entry labeled by
 the reduced of ``G``. Other ways to call this function:
 - `setindex!(db, lats, G)`
 - `db[G] = lats`
 
-If `safe` is to `true`, the function checks whether the data is safe to be
+If `safe` is set to `true`, the function checks whether the data is safe to be
 saved (highly recommended). It essentially checks:
   - whether all the lattices in `lats` are of the genus `G`,
   - whether the mass formula for `G` is satisfied by the lattices in `lats`.
 If the data is not safe, it is stored in the `quarantine` folder.
 
-If the genus ``G`` is already available in `dataset`, then:
-  - either the corresponding entry in `dataset` is corrupted. In this case, it
+If the genus ``G`` is already available in `main`, then:
+  - either the corresponding entry in `main` is corrupted. In this case, it
     is moved to `quarantine` and
       * either `replace_corrupted_data` is `true` and the new entry is stored
-        in the main `dataset` folder.
+        in the folder `main`.
       * or the new entry is stored in the folder `buffer`.
   - or `save_duplicate` is set to `true` and the new entry is saved in the
-    folder `duplicate`.
+    folder `main`.
   - or the new entry is ignored.
 
 If `verbose` is set to `true`, the user allows the function to tell which
@@ -799,23 +781,23 @@ function save_genus!(
   end
 
   if add_new_key
-    _path = joinpath(path(db), "dataset", label)
-    if isdir(_path) && !save_duplicates && !is_corrupted_entry(db, label)
+    _path = joinpath(path(db), "main", label)
+    if isfile(_path) && !save_duplicates && !is_corrupted_entry(db, label)
       verbose && println(">>>> New data is ignored")
       return true
     end
   end
 
-  tmp_path = mktempdir(joinpath(path(db), "temporary"); prefix=label)
+  _tmp_path, io = mktemp(joinpath(path(db), "temporary"); cleanup=false)
+  tmp_label = label*"__"*last(splitdir(_tmp_path))
+  tmp_path = joinpath(path(db), "temporary", tmp_label)
+  mv(_tmp_path, tmp_path)
   for i in 1:length(lats)
-    lat = joinpath(tmp_path, "lat_$(i).txt")
-    touch(lat)
-    _f = open(lat, "w")
-    Base.write(_f, data_from_lattice(lats[i], s))
-    close(_f)
+    Base.write(io, data_from_lattice(lats[i])*"\n")
   end
+  close(io)
 
-  if is_corrupted_entry(db, tmp_path; folder_name="temporary")
+  if is_corrupted_entry(db, tmp_label; folder_name="temporary")
     add_new_key = false
     verbose && println("!! Data corrupted !! Something went wrong during saving...")
     j = count(contains(label), readdir(joinpath(path(db), "quarantine")))
@@ -824,11 +806,11 @@ function save_genus!(
     verbose && println(">>>> New data stored in quarantine folder: ", quarantine_label)
   end
 
-  if isdir(_path)
+  if isfile(_path)
     verbose && println("!! Duplicate warning !! The genus seems to be already in the database...")
     if is_corrupted_entry(db, label)
       verbose && println(">> Current version of genus is corrupted...")
-      quarantine_label = move_to_quarantine!(db, "dataset", label)
+      quarantine_label = move_to_quarantine!(db, "main", label)
       verbose && println(">>>> Old data moved to quarantine folder: ", quarantine_label)
       if !replace_corrupted_data
         add_new_key = false
@@ -837,7 +819,7 @@ function save_genus!(
         _path = joinpath(path(db), "buffer", buffer_label)
         verbose && println(">>>> New data stored in buffer folder: ", buffer_label)
       else
-        verbose && println(">>>> New data stored in dataset folder: ", label)
+        verbose && println(">>>> New data stored in main folder: ", label)
       end
     else
       verbose && println(">> Current version of genus is not corrupted...")
@@ -852,7 +834,7 @@ function save_genus!(
       end
     end
   elseif add_new_key
-    verbose && println(">>>> New data stored in dataset folder: ", label)
+    verbose && println(">>>> New data stored in main folder: ", label)
   end
 
   mv(tmp_path, _path)
@@ -889,61 +871,38 @@ function Base.show(io::IO, db::ZZLatDefDB)
   print(io, "Database of definite lattices")
 end
 
-################################################################################
-##
-##  Temporary script: move old database to new infrastructure
-##
-##  To be removed once the old data has been transfered in
-##  `definite_genera/dataset`
-##
-################################################################################
+###############################################################################
 #
-## n is the rank of the matrix to be constructed
-#function _gram_from_list(V::Vector{QQFieldElem}, n::Int)
-#  M = zero_matrix(QQ, n, n)
-#  k = 0
-#  for i in 1:n
-#    for j in i:n
-#      k += 1
-#      M[i, j] = M[j, i] = V[k]
-#    end
-#  end
-#  return integer_lattice(; gram=M, cached=false)
-#end
+#  Temporary code: move to new system
 #
-## Load the genus stored in the numbered dir f
-#function load_genus(f::String)
-#  gg = ZZLat[]
-#  files = readdir(f; join=true)
-#  for file in files
-#    rl = readlines(file)
-#    n = Base.parse(Int, rl[1])
-#    _, V = Hecke._parse(Vector{QQFieldElem}, IOBuffer(rl[2]))
-#    L = _gram_from_list(V, n)
-#    if length(rl) == 3
-#      L.automorphism_group_order = Hecke._parse(ZZRingElem, IOBuffer(rl[3]))[2]
-#    end
-#    push!(gg, L)
-#  end
-#  return gg
-#end
-#
-#function move_to_new_database(
-#  db_path::String = @__DIR__;
-#  verbose::Bool=false,
-#)
-#  db = definite_lattice_database(joinpath(db_path, "definite_genera"))
-#  rd = readdir(joinpath(db_path, "defgen_db"); join=true)
-#  for rank_folder in rd
-#    for genus_entry in readdir(rank_folder; join=true)
-#      lats = load_genus(genus_entry)
-#      G = genus(first(lats))
-#      if haskey(db, G)
-#        continue
-#      end
-#      flag = save_genus!(db, lats, G; verbose)
-#      @assert !flag || Set(gram_matrix.(lats)) == Set(gram_matrix.(db[G]))
-#    end
-#  end
-#  return nothing
-#end
+###############################################################################
+
+function transport_folder_to_new_system!(
+  db::ZZLatDefDB,
+  folder_name::String,
+)
+  rd = readdir(folder_name; join=true)
+  for genus_path in rd
+    transport_genus_to_new_system!(db, genus_path)
+  end
+  update_keys!(db)
+  return nothing
+end
+
+function transport_genus_to_new_system!(
+  db::ZZLatDefDB,
+  genus_path::String,
+)
+  genus_label = last(splitdir(genus_path))
+  new_path = joinpath(path(db), "main", genus_label)
+  isfile(new_path) && return nothing
+  touch(new_path)
+  io = open(new_path, "w")
+  rd = readdir(genus_path; join=true)
+  for lat in rd
+    _, V, o = readlines(lat)
+    write(io, V*"|"*o*"\n")
+  end
+  close(io)
+  return nothing
+end
