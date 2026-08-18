@@ -230,16 +230,15 @@ end
 
 struct GenusError <: Exception
   path_to_genus::String
-  pos::Int
   msg::String
 
-  function GenusError(path_to_genus::String, pos::Int, msg::String)
-    return new(path_to_genus, pos, msg)
+  function GenusError(path_to_genus::String, msg::String)
+    return new(path_to_genus, msg)
   end
 end
 
 function Base.showerror(io::IO, e::GenusError)
-  println(io, "!! Database corrupted !! $(e.msg): line $(e.pos) of $(e.path_to_genus) !! Run a cleanup of the main folder")
+  println(io, "!! Database corrupted !! $(e.msg): $(e.path_to_genus) !! Run a cleanup of the main folder")
 end
 
 ### Checks for corrupted data
@@ -262,8 +261,6 @@ function is_corrupted_entry(
          end
 
   G = genus(first(lats))
-  !all(isequal(G)∘genus, lats) && return true
-
   _label, _ = get_label_and_scaling_factor(G)
   !contains(entry_label, _label) && return true
 
@@ -308,6 +305,13 @@ function is_valid_entry(
   # order of their automorphism group and the mass formula is satisfied
   # It just remains to check that they are really pairwise
   # non-isometric
+
+  G = genus(first(lats))
+  if !all(isequal(G)∘genus, lats)
+    quarantine && move_to_quarantine!(db, folder_name, entry_label)
+    return false
+  end
+
   for i in 1:length(lats)
     if any(j -> is_isometric(lats[i], lats[j]), i+1:length(lats))
       quarantine && move_to_quarantine!(db, folder_name, entry_label)
@@ -554,7 +558,7 @@ end
 
 @doc raw"""
     lattice_from_data(
-      V::Vector{QQFieldElem},
+      V::Vector{Int},
       n::Int,
       s::QQFieldElem,
     ) -> ZZLat
@@ -563,7 +567,7 @@ Return the integer lattice ``L(s)`` where ``L`` has rank ``n`` and the upper
 triangular part of the Gram matrix of ``L`` is given by the entries in `V`.
 """
 function lattice_from_data(
-  V::Vector{QQFieldElem},
+  V::Vector{Int},
   n::Int,
   s::QQFieldElem=QQ(1),
 )
@@ -643,13 +647,6 @@ function load_genus(
   return lats
 end
 
-function current_line(io::IOStream)
-  pos=position(io)
-  seekstart(io)
-  data = read(io, pos)
-  return count(isequal(UInt('\n')), data)
-end
-
 function load_lattice(
   io::IOStream,
   _path::String,
@@ -657,13 +654,12 @@ function load_lattice(
   s::QQFieldElem = QQ(1),
 )
   l = readline(io)
-  k = current_line(io)
   if !isone(count(isequal('|'), l))
-    throw(GenusError(_path, k, "Wrong line format"))
+    throw(GenusError(_path, "Wrong line format"))
   end
   lat, ord = split(l, "|")
   _, V = try
-           Hecke._parse(Vector{QQFieldElem}, IOBuffer(lat))
+           Hecke._parse(Vector{Int}, IOBuffer(lat))
          catch
            throw(GenusError(_path, k, "Cannot parse half gram"))
          end
