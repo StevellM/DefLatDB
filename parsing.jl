@@ -661,7 +661,7 @@ function load_lattice(
   _, V = try
            Hecke._parse(Vector{Int}, IOBuffer(lat))
          catch
-           throw(GenusError(_path, k, "Cannot parse half gram"))
+           throw(GenusError(_path, "Cannot parse half gram"))
          end
 
   L = lattice_from_data(V, n, s)
@@ -669,7 +669,7 @@ function load_lattice(
   L.automorphism_group_order = try
                                  last(Hecke._parse(ZZRingElem, IOBuffer(ord)))
                                catch
-                                 throw(GenusError(_path, k, "Cannot parse automorphism group order"))
+                                 throw(GenusError(_path, "Cannot parse automorphism group order"))
                                end
 
   return L
