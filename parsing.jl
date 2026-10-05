@@ -1,4 +1,7 @@
-## Needs Hecke 0.39.13
+## Requires Hecke 0.39.13
+## Requires ZipFile
+
+using ZipFile
 
 ###############################################################################
 #
@@ -65,8 +68,8 @@ end
 
 Initiate the object to reach the database of definite genera stored at
 the absolute path `path`. If `path` is not set in output, then it chooses by
-default the absolute path of the directory in which the file containing this
-function is stored.
+default the absolute path of the directory `data` contained in the folder in
+which the file containing this function is stored.
 """
 function definite_lattice_database(path::String = joinpath(@__DIR__, "data"))
   # Initiate all the necessary folders if not yet existing
@@ -259,7 +262,6 @@ function is_corrupted_entry(
          catch
            return true
          end
-
   G = genus(first(lats))
   _label, _ = get_label_and_scaling_factor(G)
   !contains(entry_label, _label) && return true
@@ -638,26 +640,28 @@ function load_genus(
   n = parse(Int, entry_label[1:j-1])
   _path = joinpath(path(db), folder_name, entry_label)
   @req isfile(_path) "Entry does not exist in the dataset"
-  io = open(_path, "r")
-  while !eof(io)
-    L = load_lattice(io, _path, n, s)
+  f = ZipFile.Reader(_path)
+  lis = split(read(first(f.files), String), "\n")
+  for l in lis
+    L = load_lattice(l, n, s)
     push!(lats, L)
   end
+  close(f)
   !check_mass_formula(lats) && throw(MassFormulaError(_path))
   return lats
 end
 
 function load_lattice(
-  io::IOStream,
-  _path::String,
+  l::AbstractString,
   n::Int,
   s::QQFieldElem = QQ(1),
 )
-  l = readline(io)
   if !isone(count(isequal('|'), l))
     throw(GenusError(_path, "Wrong line format"))
   end
+
   lat, ord = split(l, "|")
+
   _, V = try
            Hecke._parse(Vector{Int}, IOBuffer(lat))
          catch
@@ -675,6 +679,56 @@ function load_lattice(
   return L
 end
 
+### Old code; keep for future debugging
+
+#function old_load_genus(
+#  db::ZZLatDefDB,
+#  entry_label::String,
+#  s::QQFieldElem = QQ(1);
+#  folder_name::String="main",
+#)
+#  lats = ZZLat[]
+#  j = findfirst(isequal('.'), entry_label)
+#  @assert !isnothing(j)
+#  n = parse(Int, entry_label[1:j-1])
+#  _path = joinpath(path(db), folder_name, entry_label)
+#  @req isfile(_path) "Entry does not exist in the dataset"
+#  io = open(_path, "r")
+#  while !eof(io)
+#    L = old_load_lattice(io, _path, n, s)
+#    push!(lats, L)
+#  end
+#  !check_mass_formula(lats) && throw(MassFormulaError(_path))
+#  return lats
+#end
+#
+#function old_load_lattice(
+#  io::IOStream,
+#  _path::String,
+#  n::Int,
+#  s::QQFieldElem = QQ(1),
+#)
+#  l = readline(io)
+#  if !isone(count(isequal('|'), l))
+#    throw(GenusError(_path, "Wrong line format"))
+#  end
+#  lat, ord = split(l, "|")
+#  _, V = try
+#           Hecke._parse(Vector{Int}, IOBuffer(lat))
+#         catch
+#           throw(GenusError(_path, "Cannot parse half gram"))
+#         end
+#
+#  L = lattice_from_data(V, n, s)
+#
+#  L.automorphism_group_order = try
+#                                 last(Hecke._parse(ZZRingElem, IOBuffer(ord)))
+#                               catch
+#                                 throw(GenusError(_path, "Cannot parse automorphism group order"))
+#                               end
+#
+#  return L
+#end
 
 ###############################################################################
 #
@@ -729,7 +783,7 @@ end
 
 Update the `main` folder of the database of definite lattice reached by
 `db` by storing the (rescaled) content of `lats` in a new entry labeled by
-the reduced of ``G``. Other ways to call this function:
+the reduced genus of ``G``. Other ways to call this function:
 - `setindex!(db, lats, G)`
 - `db[G] = lats`
 
@@ -788,10 +842,11 @@ function save_genus!(
   tmp_label = label*"__"*last(splitdir(_tmp_path))
   tmp_path = joinpath(path(db), "temporary", tmp_label)
   mv(_tmp_path, tmp_path)
-  for i in 1:length(lats)
-    Base.write(io, data_from_lattice(lats[i])*"\n")
-  end
-  close(io)
+  w = ZipFile.Writer(tmp_path)
+  f = ZipFile.addfile(w, label; method=ZipFile.Deflate)
+  _to_save = join(String[data_from_lattice(L) for L in lats], "\n")
+  write(f, _to_save)
+  close(w)
 
   if is_corrupted_entry(db, tmp_label; folder_name="temporary")
     add_new_key = false
@@ -869,36 +924,26 @@ end
 
 ###############################################################################
 #
-#  Temporary code: move to new system
+#  Temporary code: move to zip
 #
 ###############################################################################
 
-function transport_folder_to_new_system!(
+function compress_old_data(
   db::ZZLatDefDB,
-  folder_name::String,
+  source::String, # absolute path to source
+  dist::String = joinpath(path(db), "main") # absolute path to dist
 )
-  rd = readdir(folder_name; join=true)
-  for genus_path in rd
-    transport_genus_to_new_system!(db, genus_path)
+  rd = readdir(source)
+  for label in rd
+    genus_path = joinpath(dist, label)
+    if isfile(genus_path)
+      continue
+    end
+    w = ZipFile.Writer(genus_path)
+    rl = join(readlines(joinpath(source, label)), "\n")
+    f = ZipFile.addfile(w, label; method=ZipFile.Deflate)
+    write(f, rl)
+    close(w)
   end
-  update_keys!(db)
-  return nothing
-end
-
-function transport_genus_to_new_system!(
-  db::ZZLatDefDB,
-  genus_path::String,
-)
-  genus_label = last(splitdir(genus_path))
-  new_path = joinpath(path(db), "main", genus_label)
-  isfile(new_path) && return nothing
-  touch(new_path)
-  io = open(new_path, "w")
-  rd = readdir(genus_path; join=true)
-  for lat in rd
-    _, V, o = readlines(lat)
-    write(io, V*"|"*o*"\n")
-  end
-  close(io)
   return nothing
 end
