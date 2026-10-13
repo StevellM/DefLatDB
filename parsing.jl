@@ -574,18 +574,16 @@ function lattice_from_data(
   s::QQFieldElem=QQ(1),
 )
   @assert length(V) == binomial(n+1, 2)
-  if !isone(s)
-    map!(Base.Fix2(mul!, s), V)
-  end
   M = zero_matrix(QQ, n, n)
   k = 0
+  tmp = QQ()
   for i in 1:n
     for j in i:n
       k += 1
-      M[i, j] = M[j, i] = V[k]
+      M[i, j] = M[j, i] = isone(s) ? V[k] : mul!(tmp, s, V[k])
     end
   end
-  return integer_lattice(; gram=M, cached=false)
+  return integer_lattice(; gram=M, cached=false, check=false)
 end
 
 @doc raw"""
@@ -657,7 +655,7 @@ function load_lattice(
   s::QQFieldElem = QQ(1),
 )
   if !isone(count(isequal('|'), l))
-    throw(GenusError(_path, "Wrong line format"))
+    throw(GenusError(string(l), "Wrong line format"))
   end
 
   lat, ord = split(l, "|")
@@ -665,7 +663,7 @@ function load_lattice(
   _, V = try
            Hecke._parse(Vector{Int}, IOBuffer(lat))
          catch
-           throw(GenusError(_path, "Cannot parse half gram"))
+           throw(GenusError(string(l), "Cannot parse half gram"))
          end
 
   L = lattice_from_data(V, n, s)
@@ -934,11 +932,14 @@ function compress_old_data(
   dist::String = joinpath(path(db), "main") # absolute path to dist
 )
   rd = readdir(source)
+  tg = Set(readdir(dist))
   for label in rd
     genus_path = joinpath(dist, label)
-    if isfile(genus_path)
+    if label in tg
+      println("skipped $label")
       continue
     end
+    println("writing: $label")
     w = ZipFile.Writer(genus_path)
     rl = join(readlines(joinpath(source, label)), "\n")
     f = ZipFile.addfile(w, label; method=ZipFile.Deflate)
