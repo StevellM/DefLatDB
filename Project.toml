@@ -1,0 +1,19 @@
+name = "DefLatDB"
+uuid = "1b98100e-21ce-43cb-8dd4-7ef4c9b464ba"
+authors = ["Stevell Muller", "Simon Brandhorst <brandhorst@math.uni-sb.de>"]
+version = "0.1.0"
+
+[deps]
+Hecke = "3e1990a7-5d81-5526-99ce-9ba3ff248f21"
+ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
+
+[compat]
+Hecke = "0.39.13, 0.40"
+ZipFile = "0.10"
+julia = "1.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
