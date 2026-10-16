@@ -82,7 +82,7 @@ end
 # the data shipped with this repository
 const DEFAULT_DATA_PATH = normpath(joinpath(@__DIR__, "..", "data"))
 
-const FOLDERS = ("main", "buffer", "quarantine", "duplicate", "temporary")
+const FOLDERS = ("main", "quarantine", "duplicate", "temporary")
 
 @doc raw"""
     definite_lattice_database(path::String = DefLatDB.DEFAULT_DATA_PATH) -> ZZLatDefDB
@@ -90,8 +90,8 @@ const FOLDERS = ("main", "buffer", "quarantine", "duplicate", "temporary")
 Initiate the object to reach the database of definite genera stored at the
 path `path`. By default, this is the folder `data` of this repository.
 
-The folders `main`, `buffer`, `quarantine`, `duplicate` and `temporary` are
-created in `path` if they do not exist yet.
+The folders `main`, `quarantine`, `duplicate` and `temporary` are created in
+`path` if they do not exist yet.
 """
 function definite_lattice_database(path::String = DEFAULT_DATA_PATH)
   for folder in FOLDERS
@@ -472,7 +472,7 @@ end
       quarantine::Bool=true,
     ) -> Nothing
 
-Move the entry `entry_label` from the folder `folder_name` (`buffer` or
+Move the entry `entry_label` from the folder `folder_name` (currently only
 `duplicate`) in the database of definite lattices reached by `db` to the
 `main` folder.
 
@@ -497,7 +497,7 @@ function promote_entry_to_main_folder!(
   ignore_conflict::Bool=true,
   quarantine::Bool=true,
 )
-  @req folder_name in ("buffer", "duplicate") "Only entries of the buffer or duplicate folder can be promoted"
+  @req folder_name == "duplicate" "Only entries of the duplicate folder can be promoted"
   if is_corrupted_entry(db, entry_label; folder_name)
     if quarantine
       move_to_quarantine!(db, folder_name, entry_label)
@@ -788,7 +788,6 @@ end
       lats::Vector{ZZLat},
       G::ZZGenus = genus(first(lats));
       safe::Bool=true,
-      replace_corrupted_data::Bool=true,
       save_duplicates::Bool=false,
       verbose::Bool=false,
     ) -> Bool
@@ -808,16 +807,13 @@ If the data is not safe, it is stored in the `quarantine` folder.
 
 If the genus ``G`` is already available in `main`, then:
   - either the corresponding entry in `main` is corrupted. In this case, it
-    is moved to `quarantine` and
-      * either `replace_corrupted_data` is `true` and the new entry is stored
-        in the folder `main`.
-      * or the new entry is stored in the folder `buffer`.
+    is moved to `quarantine` and replaced by the new entry.
   - or `save_duplicates` is set to `true` and the new entry is saved in the
     folder `duplicate`.
   - or the new entry is ignored.
 
 Return whether the genus is available in the `main` folder afterwards, i.e.
-`false` if the data went to `quarantine` or `buffer`.
+`false` if the data went to `quarantine`.
 
 If `verbose` is set to `true`, the user allows the function to tell which
 decision is taken for storing the new entry.
@@ -827,7 +823,6 @@ function save_genus!(
   lats::Vector{ZZLat},
   G::ZZGenus = genus(first(lats));
   safe::Bool=true,
-  replace_corrupted_data::Bool=true,
   save_duplicates::Bool=false,
   verbose::Bool=false,
 )
@@ -876,14 +871,7 @@ function save_genus!(
       verbose && println(">> Current version of genus is corrupted...")
       quarantine_label = move_to_quarantine!(db, "main", label)
       verbose && println(">>>> Old data moved to quarantine folder: ", quarantine_label)
-      if !replace_corrupted_data
-        add_new_key = false
-        buffer_label = _free_label(db, "buffer", label, "buf")
-        _path = joinpath(path(db), "buffer", buffer_label)
-        verbose && println(">>>> New data stored in buffer folder: ", buffer_label)
-      else
-        verbose && println(">>>> New data stored in main folder: ", label)
-      end
+      verbose && println(">>>> New data stored in main folder: ", label)
     else
       # (only reached with save_duplicates = true)
       verbose && println(">> Current version of genus is not corrupted...")

@@ -19,9 +19,10 @@ end
 @testset "DefLatDB" begin
   @testset "create, save, load" begin
     db = definite_lattice_database(mktempdir())
-    for folder in ("main", "buffer", "quarantine", "duplicate", "temporary")
+    for folder in ("main", "quarantine", "duplicate", "temporary")
       @test isdir(joinpath(path(db), folder))
     end
+    @test !isdir(joinpath(path(db), "buffer"))
     @test length(db) == 0
     @test !haskey(db, G)
 
@@ -72,7 +73,7 @@ end
     @test isempty(readdir(joinpath(path(db), "temporary")))
   end
 
-  @testset "duplicates, quarantine, buffer" begin
+  @testset "duplicates, quarantine" begin
     db = definite_lattice_database(mktempdir())
     @test save_genus!(db, R, G)
     # already there: ignored, or stored as a duplicate
@@ -93,7 +94,7 @@ end
     @test !haskey(db3, G)
     @test isempty(readdir(joinpath(path(db3), "temporary")))
 
-    # a corrupted entry in main is detected and replaced...
+    # a corrupted entry in main is detected and replaced
     write_entry(db3, "main", LABEL, [data_from_lattice(L) for L in R[1:end-1]])
     update_keys!(db3)
     @test haskey(db3, G)
@@ -102,21 +103,18 @@ end
     @test !is_corrupted_entry(db3, LABEL)
     @test length(readdir(joinpath(path(db3), "quarantine"))) == 3
 
-    # ... or the new data goes to the buffer, from where it can be promoted
-    write_entry(db3, "main", LABEL, [data_from_lattice(L) for L in R[1:end-1]])
-    @test !save_genus!(db3, R, G; replace_corrupted_data=false)
-    @test !haskey(db3, G)                    # the corrupted entry was removed from the index
-    @test readdir(joinpath(path(db3), "buffer")) == [LABEL * "__buf.0"]
-    promote_folder_to_main_folder!(db3, "buffer")
-    @test haskey(db3, G)                     # (the key is the label, not the buffer label)
-    @test !haskey(db3, LABEL * "__buf.0")
-    @test is_valid_entry(db3, LABEL)
-
-    # cleanup moves corrupted entries out of main
+    # cleanup moves corrupted entries out of main ...
+    @test save_genus!(db3, R, G; save_duplicates=true)
     write_entry(db3, "main", LABEL, [data_from_lattice(L) for L in R[1:end-1]])
     cleanup_database!(db3)
     @test !haskey(db3, G)
     @test !isfile(joinpath(path(db3), "main", LABEL))
+    # ... and a duplicate can take its place
+    promote_folder_to_main_folder!(db3, "duplicate")
+    @test haskey(db3, G)                     # (the key is the label, not the duplicate label)
+    @test !haskey(db3, LABEL * "__dup.0")
+    @test is_valid_entry(db3, LABEL)
+    @test_throws ArgumentError promote_entry_to_main_folder!(db3, "quarantine", LABEL * "__qua.0")
 
     empty_folder!(db3, "quarantine")
     @test isempty(readdir(joinpath(path(db3), "quarantine")))

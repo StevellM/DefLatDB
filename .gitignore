@@ -1,6 +1,5 @@
 Manifest.toml
 # created and used at runtime; only data/main is part of the database
-data/buffer/
 data/duplicate/
 data/quarantine/
 data/temporary/

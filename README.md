@@ -48,7 +48,6 @@ rescalings `G(s)` of a genus.
 ```
 data/
   main/         the database: one file per (reduced) genus
-  buffer/       new data whose genus had a corrupted entry in main (save_genus!)
   duplicate/    second copies of genera already in main (save_genus!(...; save_duplicates=true))
   quarantine/   data that failed a check
   temporary/    files being written
@@ -75,7 +74,7 @@ demand.
 is_valid_entry(db, label)         # same genus, pairwise non-isometric, mass formula (slow)
 test_validity_database(db)        # is_valid_entry for all entries; returns the number of invalid ones
 cleanup_database!(db)             # move entries that fail the quick checks to quarantine
-promote_folder_to_main_folder!(db, "buffer")
+promote_folder_to_main_folder!(db, "duplicate")
 empty_folder!(db, "quarantine")
 update_keys!(db)                  # re-read the index (entries stored by other processes)
 normalize_database!(db)           # rewrite entries that are not in the scaling of the reduced genus
