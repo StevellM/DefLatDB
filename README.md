@@ -101,3 +101,17 @@ keep working. Their environment needs Hecke (or Oscar) and ZipFile, as before.
 ```julia
 using Pkg; Pkg.test("DefLatDB")
 ```
+
+## Citing us
+
+If you use the database in a substantial way for your research, please consider
+citing us in the following way:
+
+```bib
+@misc{DefLatDB,
+  author = {Brandhorst, Simon and Muller, Stevell},
+  title = {DefLatDB: A database of genera of definite integer lattices, {V}ersion 0.1.0},
+  year = {2026},
+  url = {https://github.com/StevellM/DefLatDB},
+}
+```
